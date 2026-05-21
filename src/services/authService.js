@@ -1,5 +1,6 @@
 import {
   createUserWithEmailAndPassword,
+  deleteUser,
   sendEmailVerification,
   signInWithEmailAndPassword,
   signOut,
@@ -40,20 +41,21 @@ export async function registerAdmin({
   university,
   department,
 }) {
+  const userCredential = await createUserWithEmailAndPassword(
+    auth,
+    email,
+    password
+  );
+
   const hasAdmin = await checkDepartmentHasAdmin(
     university.id,
     department.id
   );
 
   if (hasAdmin) {
+    await deleteUser(userCredential.user);
     throw new Error("This department already has an admin.");
   }
-
-  const userCredential = await createUserWithEmailAndPassword(
-    auth,
-    email,
-    password
-  );
 
   await sendEmailVerification(userCredential.user);
 
