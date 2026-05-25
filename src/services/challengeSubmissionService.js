@@ -4,8 +4,8 @@ import {
   doc,
   getDocs,
   query,
+  runTransaction,
   serverTimestamp,
-  updateDoc,
   where,
 } from "firebase/firestore";
 
@@ -70,12 +70,57 @@ export async function reviewChallengeSubmission({
 }) {
   const submissionRef = doc(db, "challengeSubmissions", submissionId);
 
-  await updateDoc(submissionRef, {
-    status: newStatus,
-    pointsAwarded,
-    adminNote,
-    reviewedBy,
-    reviewedAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
+  await runTransaction(db, async (transaction) => {
+    // 1. READ submission dulu
+    const submissionSnapshot = await transaction.get(submissionRef);
+
+    if (!submissionSnapshot.exists()) {
+      throw new Error("Submission not found.");
+    }
+
+    const submissionData = submissionSnapshot.data();
+
+    if (submissionData.status !== "submitted") {
+      throw new Error("This submission has already been reviewed.");
+    }
+
+    const finalPointsAwarded =
+      newStatus === "approved" ? Number(pointsAwarded) : 0;
+
+    let studentRef = null;
+    let studentData = null;
+
+    // 2. Kalau approved, READ student dulu sebelum write apa pun
+    if (newStatus === "approved") {
+      studentRef = doc(db, "users", submissionData.studentId);
+
+      const studentSnapshot = await transaction.get(studentRef);
+
+      if (!studentSnapshot.exists()) {
+        throw new Error("Student user not found.");
+      }
+
+      studentData = studentSnapshot.data();
+    }
+
+    // 3. Setelah semua READ selesai, baru WRITE submission
+    transaction.update(submissionRef, {
+      status: newStatus,
+      pointsAwarded: finalPointsAwarded,
+      adminNote,
+      reviewedBy,
+      reviewedAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+
+    // 4. Kalau approved, WRITE points student
+    if (newStatus === "approved" && studentRef && studentData) {
+      const currentPoints = Number(studentData.points || 0);
+
+      transaction.update(studentRef, {
+        points: currentPoints + finalPointsAwarded,
+        updatedAt: serverTimestamp(),
+      });
+    }
   });
 }

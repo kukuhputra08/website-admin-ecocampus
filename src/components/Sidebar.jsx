@@ -7,7 +7,9 @@ import {
   Trophy,
   CalendarDays,
   UserCircle,
+  Gift,
   Leaf,
+  Ticket,
 } from "lucide-react";
 
 const menuItems = [
@@ -45,6 +47,16 @@ const menuItems = [
     name: "Profile",
     path: "/profile",
     icon: UserCircle,
+  },
+  {
+    label: "Rewards",
+    path: "/rewards",
+    icon: Gift,
+  },
+  {
+    label: "Redemptions",
+    path: "/redemtion",
+    icon: Ticket,
   },
 ];
 
