@@ -16,9 +16,9 @@ import Events from "./pages/Events";
 import Profile from "./pages/Profile";
 import Rewards from "./pages/Rewards";
 import Redemptions from "./pages/Redemptions";
-// import DevTools from "./pages/DevTools";
-// import StudentSimulator from "./pages/StudentSimulator";
-// import TestUpload from "./pages/TestUpload";
+import DevTools from "./pages/DevTools";
+import StudentSimulator from "./pages/StudentSimulator";
+import TestUpload from "./pages/TestUpload";
 
 function App() {
   return (
@@ -41,9 +41,9 @@ function App() {
           <Route path="/redemtion" element={<Redemptions />} />
           <Route path="/profile" element={<Profile />} />
 
-          {/* <Route path="/dev-tools" element={<DevTools />} />
+          <Route path="/dev-tools" element={<DevTools />} />
           <Route path="/student-simulator" element={<StudentSimulator />} />
-          <Route path="/test-upload" element={<TestUpload />} /> */}
+          <Route path="/test-upload" element={<TestUpload />} />
         </Route>
       </Route>
     </Routes>

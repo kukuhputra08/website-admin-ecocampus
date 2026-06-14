@@ -12,6 +12,7 @@ import {
 import { db } from "./firebase";
 
 const submissionsCollection = collection(db, "challengeSubmissions");
+const usersCollection = collection(db, "users");
 
 export async function getChallengeSubmissionsByAdmin(admin) {
   const submissionsQuery = query(
@@ -32,11 +33,12 @@ export async function addChallengeSubmission(admin, submissionData) {
   const docRef = await addDoc(submissionsCollection, {
     challengeId: submissionData.challengeId,
 
-    studentId: submissionData.studentId,
-    studentName: submissionData.studentName,
-    studentEmail: submissionData.studentEmail,
+    studentUid: submissionData.studentUid || "",
+    studentId: submissionData.studentId || "",
+    studentName: submissionData.studentName || "",
+    studentEmail: submissionData.studentEmail || "",
 
-    proofImageUrl: submissionData.proofImageUrl,
+    proofImageUrl: submissionData.proofImageUrl || "",
     submittedQuantity: submissionData.submittedQuantity || null,
     note: submissionData.note || "",
 
@@ -61,6 +63,95 @@ export async function addChallengeSubmission(admin, submissionData) {
   return docRef.id;
 }
 
+function normalizeText(value) {
+  if (value === null || value === undefined) {
+    return "";
+  }
+
+  return value.toString().trim();
+}
+
+async function findStudentUserInsideTransaction(transaction, submissionData) {
+  const studentUid = normalizeText(submissionData.studentUid);
+  const userId = normalizeText(submissionData.userId);
+  const uid = normalizeText(submissionData.uid);
+  const studentId = normalizeText(submissionData.studentId);
+  const studentEmail = normalizeText(submissionData.studentEmail);
+  const email = normalizeText(submissionData.email);
+
+  async function findByDocumentId(documentId) {
+    if (!documentId) return null;
+
+    const userRef = doc(db, "users", documentId);
+    const userSnapshot = await transaction.get(userRef);
+
+    if (!userSnapshot.exists()) {
+      return null;
+    }
+
+    return {
+      ref: userRef,
+      data: userSnapshot.data(),
+      id: userSnapshot.id,
+    };
+  }
+
+  async function findByField(fieldName, value) {
+    if (!value) return null;
+
+    const userQuery = query(
+      usersCollection,
+      where(fieldName, "==", value)
+    );
+
+    const userSnapshot = await transaction.get(userQuery);
+
+    if (userSnapshot.empty) {
+      return null;
+    }
+
+    const userDocument = userSnapshot.docs[0];
+
+    return {
+      ref: userDocument.ref,
+      data: userDocument.data(),
+      id: userDocument.id,
+    };
+  }
+
+  const documentIdCandidates = [
+    studentUid,
+    userId,
+    uid,
+    studentId,
+  ];
+
+  for (const candidate of documentIdCandidates) {
+    const result = await findByDocumentId(candidate);
+
+    if (result) {
+      return result;
+    }
+  }
+
+  const studentIdResult = await findByField("studentId", studentId);
+
+  if (studentIdResult) {
+    return studentIdResult;
+  }
+
+  const studentEmailResult = await findByField(
+    "email",
+    studentEmail || email
+  );
+
+  if (studentEmailResult) {
+    return studentEmailResult;
+  }
+
+  return null;
+}
+
 export async function reviewChallengeSubmission({
   submissionId,
   newStatus,
@@ -71,7 +162,6 @@ export async function reviewChallengeSubmission({
   const submissionRef = doc(db, "challengeSubmissions", submissionId);
 
   await runTransaction(db, async (transaction) => {
-    // 1. READ submission dulu
     const submissionSnapshot = await transaction.get(submissionRef);
 
     if (!submissionSnapshot.exists()) {
@@ -85,39 +175,36 @@ export async function reviewChallengeSubmission({
     }
 
     const finalPointsAwarded =
-      newStatus === "approved" ? Number(pointsAwarded) : 0;
+      newStatus === "approved" ? Number(pointsAwarded || 0) : 0;
 
-    let studentRef = null;
-    let studentData = null;
+    let studentUser = null;
 
-    // 2. Kalau approved, READ student dulu sebelum write apa pun
     if (newStatus === "approved") {
-      studentRef = doc(db, "users", submissionData.studentId);
+      studentUser = await findStudentUserInsideTransaction(
+        transaction,
+        submissionData
+      );
 
-      const studentSnapshot = await transaction.get(studentRef);
-
-      if (!studentSnapshot.exists()) {
-        throw new Error("Student user not found.");
+      if (!studentUser) {
+        throw new Error(
+          "Student user not found. Pastikan submission memiliki studentUid, studentId, atau studentEmail yang sesuai dengan collection users."
+        );
       }
-
-      studentData = studentSnapshot.data();
     }
 
-    // 3. Setelah semua READ selesai, baru WRITE submission
     transaction.update(submissionRef, {
       status: newStatus,
       pointsAwarded: finalPointsAwarded,
-      adminNote,
-      reviewedBy,
+      adminNote: adminNote || "",
+      reviewedBy: reviewedBy || "",
       reviewedAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     });
 
-    // 4. Kalau approved, WRITE points student
-    if (newStatus === "approved" && studentRef && studentData) {
-      const currentPoints = Number(studentData.points || 0);
+    if (newStatus === "approved" && studentUser) {
+      const currentPoints = Number(studentUser.data.points || 0);
 
-      transaction.update(studentRef, {
+      transaction.update(studentUser.ref, {
         points: currentPoints + finalPointsAwarded,
         updatedAt: serverTimestamp(),
       });
